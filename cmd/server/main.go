@@ -3,13 +3,15 @@ package main
 
 import (
 	"github.com/Sonlis/leds-controller/internal/effect"
+    "github.com/Sonlis/leds-controller/internal/controller"
 	"github.com/gin-gonic/gin"
     "net/http"
     "os"
     "gopkg.in/yaml.v2"
+    "strconv"
 )
 
-func setupRouter(controllers map[string]string) *gin.Engine {
+func setupRouter(controllers map[string]*controller.Controller, pixel_count int) *gin.Engine {
 	r := gin.Default()
 
 	// Health endpoint.
@@ -32,7 +34,7 @@ func setupRouter(controllers map[string]string) *gin.Engine {
             return
         }
 
-        err := effect.RunEffect(effectName, config, controllers)
+        err := effect.RunEffect(effectName, config, controllers, pixel_count)
 		if err == nil {
             c.JSON(http.StatusOK, gin.H{"executed": true, "message": "Effect "+effectName+" started correctly"})
 		} else {
@@ -41,7 +43,7 @@ func setupRouter(controllers map[string]string) *gin.Engine {
 	})
 
     r.GET("/effect/stop", func(c *gin.Context) {
-        err := effect.StopEffect()
+      err := effect.StopEffect(controllers)
         if err != nil {
             c.JSON(http.StatusOK, gin.H{"executed": false, "message": "Error stopping effect: "+err.Error()})
             return
@@ -52,14 +54,10 @@ func setupRouter(controllers map[string]string) *gin.Engine {
 	return r
 }
 
-func parseControllers(filePath string) (map[string]string, error) {
-    var temporary struct {
-        Controllers []struct {
-            Name string `yaml:"name"`
-            IPAdress string `yaml:"ipAdress"`
-            Port int `yaml:"port"`
-        } `yaml:"controllers"`
-    }
+func parseControllers(filePath string) (map[string]*controller.Controller, error) {
+    temporary := struct {
+        Controllers []controller.Controller `yaml:"controllers"`
+    }{}
 
     yamlFile, err := os.ReadFile(filePath)
 	if err != nil {
@@ -71,10 +69,10 @@ func parseControllers(filePath string) (map[string]string, error) {
 		return nil, err
 	}
 
-    controllers := make(map[string]string)
+    controllers := make(map[string]*controller.Controller)
 
     for _, controller := range temporary.Controllers {
-        controllers[controller.Name] = controller.IPAdress
+        controllers[controller.Name] = &controller
     }
 
     return controllers, nil
@@ -89,7 +87,14 @@ func main() {
     if err != nil {
         panic(err)
     }
-    router := setupRouter(controllers)
+    pixel_count := 60
+    if value, ok := os.LookupEnv("PIXEL_COUNT"); ok {
+        pixel_count, err = strconv.Atoi(value)
+        if err != nil {
+            panic(err)
+        }
+    }
+    router := setupRouter(controllers, pixel_count)
 	router.Run(":8082")
 }
 

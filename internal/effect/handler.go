@@ -1,15 +1,15 @@
 package effect
 
 import (
-    "errors"
-    "github.com/Sonlis/leds-controller/internal/controller"
-    "sync"
+	"context"
+	"errors"
+	"log"
+
+	"github.com/Sonlis/leds-controller/internal/controller"
 )
 
 var (
-    mu        sync.Mutex
-    stopChan  = make(chan struct{})
-    running   = false
+    contexts  = map[string]context.CancelFunc{}
 )
 
 type EffectConfig struct {
@@ -20,52 +20,59 @@ type EffectConfig struct {
     Controllers []string `json:"controllers"`
 }
 
-func RunEffect(effect string, config EffectConfig, controllers map[string]string) error{
-    controllersList := []*controller.Controller{}
+func RunEffect(effect string, config EffectConfig, controllers map[string]*controller.Controller, pixel_count int) error{
+    ctx, cancel := context.WithCancel(context.Background())
     // Check if the controller configured in the request exists.
     for _, controllerName := range config.Controllers {
         if _, ok := controllers[controllerName]; !ok {
+            cancel()
             return errors.New("Controller "+controllerName+" not found")
         }
-        controllersList = append(controllersList, &controller.Controller{Name: controllerName, IPAdress: controllers[controllerName]})
     }
 
     // Check if the controllers are up and running.
-    for _, ledController := range controllersList {
+    for _, ledController := range controllers {
         err := ledController.CheckStatus()
+        log.Println("Checking status of controller "+ledController.Name)
         if err != nil {
+            cancel()
             return err
         }
-        ledController.InitPixelsArrays(240)
+        ledController.InitPixelsArrays(pixel_count)
+        err = ledController.Connect()
+        if err != nil {
+            cancel()
+            return err
+        }
     }
-    mu.Lock()
-    defer mu.Unlock()
+    if len(contexts) > 0 {
+        for effectRunning, cancelFunc := range contexts {
+            cancelFunc()
+            delete(contexts, effectRunning)
+        }
 
-    if running {
-        stopChan <- struct{}{}
     }
+    contexts[effect] = cancel
 
-    errCh := make(chan error)
     switch effect {
     case "rainbow":
-        go runRainbowEffect(config, controllersList, errCh)
-    }
-    running = true
-    err := <-errCh
-    if err != nil {
-        return errors.New("Error running effect: "+err.Error())
+        go runRainbowEffect(controllers, ctx, pixel_count)
     }
     return nil
 }
 
-func StopEffect() error {
-    mu.Lock()
-    defer mu.Unlock()
-    if running {
-        stopChan <- struct{}{}
-        running = false
-    } else {
-        return errors.New("No effect is currently running")
+
+// StopEffect stops the effect running on the controllers.
+// It sends a cancel signal to the context of the effect, and clears the pixels on the controllers.
+func StopEffect(ledControllers map[string]*controller.Controller) error {
+    for _, cancelFunc := range contexts {
+        cancelFunc()
+    }
+    for _, ledController := range ledControllers {
+        err := ledController.Clear()
+        if err != nil {
+            return err
+        }
     }
     return nil
 }

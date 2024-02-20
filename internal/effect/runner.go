@@ -1,7 +1,9 @@
 package effect
 
 import (
-    "time"
+	"context"
+	"time"
+
 	"github.com/Sonlis/leds-controller/internal/controller"
 )
 
@@ -21,7 +23,7 @@ func filterUnchangedPixels(pixels [][4]int, previousPixels [][4]int) [][4]int {
 
 func splitPixelsIntoPackets(pixels [][4]int) [][][4]int {
     packets := [][][4]int{}
-    size := 127
+    size := 128
     for i := 0; i < len(pixels); i += size{
         j := i + size
         if j > len(pixels) {
@@ -32,37 +34,38 @@ func splitPixelsIntoPackets(pixels [][4]int) [][][4]int {
     return packets
 }
 
-func runRainbowEffect(config EffectConfig, controllers []*controller.Controller, ch chan error) {
+func buildPackets(pixels, previousPixels [][4]int) [][][4]int {
     packets := [][][4]int{}
-    previousPixels := make([][4]int, 240)
-    for _, ledController := range controllers {
-        err := ledController.Connect()
-        if err != nil {
-            ch <- err
-        }
+    filteredPixels := filterUnchangedPixels(pixels, previousPixels)
+    previousPixels = pixels
+    if len(filteredPixels) > 127 {
+        packets = splitPixelsIntoPackets(filteredPixels)
+    } else {
+        packets = [][][4]int{filteredPixels}
     }
+    return packets
+}
+
+func runRainbowEffect(controllers map[string]*controller.Controller, ctx context.Context, pixel_count int) {
+    previousPixels := make([][4]int, pixel_count)
+    j := 0
     for {
         select {
-        case <-stopChan:
-            return // Stop the function if a signal is received on stopChan
+        case <-ctx.Done():
+            return
         default:
-            for j := 0; j < 1024; j++ {
-                pixels := rainbow(config, j)
-                filteredPixels := filterUnchangedPixels(pixels, previousPixels)
-                previousPixels = pixels
-                if len(filteredPixels) > 127 {
-                    packets = splitPixelsIntoPackets(filteredPixels)
-                } else {
-                    packets = [][][4]int{filteredPixels}
-                }
+            if j == 255 {
+                j = 0
+            } else {
+                pixels := rainbow(j, pixel_count)
+                packets := buildPackets(pixels, previousPixels)
                 for _, ledController := range controllers {
-                    err := ledController.SendPackets(packets)
-                    if err != nil {
-                        ch <- err
-                    }
+                    ledController.SendPackets(packets)
                 }
                 time.Sleep(16 * time.Millisecond)
+                j++
             }
-        }
+            }
     }
 }
+

@@ -1,9 +1,9 @@
 package effect
 
-func rainbow(config EffectConfig, rainbowGenerator int) [][4]int {
-    pixels := make([][4]int, 240)
-    for i := 0; i < 240; i++ {
-        r, g, b := wheel(((i * 256 % 240) +rainbowGenerator) & 255)
+func rainbow(rainbowGenerator, pixel_count int) [][4]int {
+    pixels := make([][4]int, pixel_count)
+    for i := 0; i < pixel_count; i++ {
+        r, g, b := wheel(((i * 256 % pixel_count) +rainbowGenerator) & 255)
         pixels[i] = [4]int{i, r, g, b}
     }
     return pixels
