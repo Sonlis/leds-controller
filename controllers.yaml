@@ -1,0 +1,4 @@
+controllers:
+  - name: esp32
+    ipAdress: 192.168.0.10
+    port: 7777
