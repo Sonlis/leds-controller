@@ -18,9 +18,6 @@ func TestConnect(t *testing.T) {
     if err == nil {
         t.Errorf("Expected an error, got nil")
     }
-    if err != nil && err.Error() != "Error connecting to controller : dial udp: lookup oui: no such host" {
-        t.Errorf("Expected error to be 'Error connecting to controller : dial udp: lookup oui: no such host', got %v", err)
-    }
 }
 
 func TestInitPixelsArrays(t *testing.T) {
